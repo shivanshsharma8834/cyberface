@@ -6,27 +6,49 @@ import { useGLTF, Center, Resize, Float, Sparkles, Grid } from "@react-three/dre
 import { EffectComposer, Noise, Vignette, Scanline, Glitch } from "@react-three/postprocessing";
 import * as THREE from "three";
 
-// --- 1. AUDIO ANALYZER (UPDATED FOR SYSTEM AUDIO) ---
-function useAudioAnalyzer(sourceType) { // sourceType: 'mic' | 'system' | null
-  const [analyzer, setAnalyzer] = useState(null);
-  const [dataArray, setDataArray] = useState(null);
+// --- TYPES ---
+type EyeMode = "normal" | "angry" | "shock" | "sus";
+type AudioSourceType = "mic" | "system" | null;
+
+interface EyeProps {
+  mode: EyeMode;
+  position: [number, number, number];
+  rotation: [number, number, number];
+  isBlinking: boolean;
+  volume: number;
+}
+
+interface MouthProps {
+  mode: EyeMode;
+  volume: number;
+  position: [number, number, number];
+}
+
+interface ModelProps {
+  mouse: React.MutableRefObject<number[]>;
+  getVolume: () => number;
+}
+
+// --- 1. AUDIO ANALYZER HOOK ---
+function useAudioAnalyzer(sourceType: AudioSourceType) {
+  const [analyzer, setAnalyzer] = useState<AnalyserNode | null>(null);
+  const [dataArray, setDataArray] = useState<Uint8Array | null>(null);
 
   useEffect(() => {
     if (!sourceType) return;
 
     const setupAudio = async () => {
         try {
-            let stream;
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            let stream: MediaStream;
+            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+            const audioCtx = new AudioContextClass();
             
             if (sourceType === 'mic') {
-                // Method A: Standard Microphone
                 stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            } else if (sourceType === 'system') {
-                // Method B: System Audio via Screen Share
-                // NOTE: User MUST check "Share Audio" in the browser popup
+            } else {
+                // System Audio via Screen Share
                 stream = await navigator.mediaDevices.getDisplayMedia({ 
-                    video: true, // Video is required to get audio in displayMedia
+                    video: true, 
                     audio: {
                         echoCancellation: false,
                         noiseSuppression: false,
@@ -38,7 +60,7 @@ function useAudioAnalyzer(sourceType) { // sourceType: 'mic' | 'system' | null
             const source = audioCtx.createMediaStreamSource(stream);
             const newAnalyzer = audioCtx.createAnalyser();
             newAnalyzer.fftSize = 64; 
-            newAnalyzer.smoothingTimeConstant = 0.8; // Smooth out jittery system audio
+            newAnalyzer.smoothingTimeConstant = 0.8; 
             
             source.connect(newAnalyzer);
             
@@ -50,29 +72,26 @@ function useAudioAnalyzer(sourceType) { // sourceType: 'mic' | 'system' | null
 
         } catch (err) {
             console.error("Audio access denied:", err);
-            // Reset if failed
         }
     };
 
     setupAudio();
     
-    // Cleanup function to close context if component unmounts
     return () => {
         if(analyzer) analyzer.disconnect();
     }
   }, [sourceType]);
 
-  const getVolume = () => {
+  const getVolume = (): number => {
     if (!analyzer || !dataArray) return 0;
     analyzer.getByteFrequencyData(dataArray);
     
     let sum = 0;
-    // We focus on lower frequencies (bass) for better visual 'punch'
     for (let i = 0; i < dataArray.length; i++) {
         sum += dataArray[i];
     }
     
-    // Normalize (System audio is louder than Mic, so we divide by more)
+    // Normalize (System audio is louder than Mic)
     const normalizeFactor = sourceType === 'system' ? 180.0 : 128.0;
     return (sum / dataArray.length) / normalizeFactor; 
   };
@@ -80,10 +99,14 @@ function useAudioAnalyzer(sourceType) { // sourceType: 'mic' | 'system' | null
   return getVolume;
 }
 
-// --- 2. ENVIRONMENT (UNCHANGED) ---
+// --- 2. ENVIRONMENT ---
 function DedSecEnvironment() {
   const debrisData = useMemo(() => new Array(15).fill(0).map(() => ({
-      position: [(Math.random() - 0.5) * 15, (Math.random() - 0.5) * 10, (Math.random() - 1) * 10 - 2],
+      position: [
+        (Math.random() - 0.5) * 15, 
+        (Math.random() - 0.5) * 10, 
+        (Math.random() - 1) * 10 - 2
+      ] as [number, number, number],
       scale: Math.random() * 0.5 + 0.2,
       color: Math.random() > 0.5 ? "#00ffff" : "#ff00ff", 
       shape: Math.random() > 0.5 ? "box" : "ico",
@@ -106,11 +129,11 @@ function DedSecEnvironment() {
   );
 }
 
-// --- 3. DIGITAL EYE (UNCHANGED) ---
-function EyeElement({ mode, position, rotation, isBlinking, volume }) {
-  const colors = { normal: "#39FF14", angry: "#ff003c", shock: "#00ffff", sus: "#ffff00" };
+// --- 3. DIGITAL EYE ---
+function EyeElement({ mode, position, rotation, isBlinking, volume }: EyeProps) {
+  const colors: Record<EyeMode, string> = { normal: "#39FF14", angry: "#ff003c", shock: "#00ffff", sus: "#ffff00" };
   const currentColor = colors[mode] || colors.normal;
-  const eyeRef = useRef();
+  const eyeRef = useRef<THREE.Group>(null);
   
   const audioScale = 1 + (volume * 0.3);
 
@@ -172,9 +195,9 @@ function EyeElement({ mode, position, rotation, isBlinking, volume }) {
   );
 }
 
-// --- 4. MOUTH ELEMENT (UNCHANGED) ---
-function MouthElement({ mode, volume, position }) {
-    const colors = { normal: "#39FF14", angry: "#ff003c", shock: "#00ffff", sus: "#ffff00" };
+// --- 4. MOUTH ELEMENT ---
+function MouthElement({ mode, volume, position }: MouthProps) {
+    const colors: Record<EyeMode, string> = { normal: "#39FF14", angry: "#ff003c", shock: "#00ffff", sus: "#ffff00" };
     const currentColor = colors[mode] || colors.normal;
     
     const barHeight = 0.15 + (volume * 0.8); 
@@ -224,16 +247,16 @@ function MouthElement({ mode, volume, position }) {
     )
 }
 
-// --- 5. MAIN MODEL (UNCHANGED) ---
-function Model({ mouse, getVolume }) {
-  const group = useRef();
-  const [mode, setMode] = useState("normal"); 
+// --- 5. MAIN MODEL ---
+function Model({ mouse, getVolume }: ModelProps) {
+  const group = useRef<THREE.Group>(null);
+  const [mode, setMode] = useState<EyeMode>("normal"); 
   const [isBlinking, setIsBlinking] = useState(false);
   const [currentVol, setCurrentVol] = useState(0);
   const { scene } = useGLTF("/mask.glb");
 
   useEffect(() => {
-    const handleKeyDown = (e) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === "1") setMode("normal");
         if (e.key === "2") setMode("angry");
         if (e.key === "3") setMode("shock");
@@ -279,20 +302,19 @@ function Model({ mouse, getVolume }) {
   );
 }
 
-// --- 6. SCENE WRAPPER (UPDATED UI) ---
+// --- 6. SCENE WRAPPER ---
 export default function HackerFaceScene() {
-  const mouse = useRef([0, 0]);
-  const [audioSource, setAudioSource] = useState(null); // 'mic' or 'system' or null
+  const mouse = useRef<number[]>([0, 0]);
+  const [audioSource, setAudioSource] = useState<AudioSourceType>(null);
   const getVolume = useAudioAnalyzer(audioSource);
 
-  const handleMouseMove = (e) => {
+  const handleMouseMove = (e: React.MouseEvent) => {
     mouse.current = [(e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1];
   };
 
   return (
     <div style={{ width: "100vw", height: "100vh", background: "#050505" }} onMouseMove={handleMouseMove}>
       
-      {/* INITIALIZATION OVERLAY */}
       {!audioSource && (
         <div style={{
             position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
@@ -303,7 +325,6 @@ export default function HackerFaceScene() {
             <h1 style={{fontSize: '2rem', borderBottom: '2px solid #39FF14', paddingBottom: '10px'}}>[ INITIALIZE AUDIO ]</h1>
             
             <div style={{ display: 'flex', gap: '20px' }}>
-                {/* MIC BUTTON */}
                 <button 
                     onClick={() => setAudioSource('mic')}
                     style={{
@@ -311,13 +332,12 @@ export default function HackerFaceScene() {
                         padding: '15px 30px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '1.2rem',
                         textTransform: 'uppercase', transition: '0.2s'
                     }}
-                    onMouseOver={(e) => e.target.style.background = 'rgba(57, 255, 20, 0.2)'}
-                    onMouseOut={(e) => e.target.style.background = 'transparent'}
+                    onMouseOver={(e) => (e.currentTarget.style.background = 'rgba(57, 255, 20, 0.2)')}
+                    onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
                     [ ENABLE MIC ]
                 </button>
 
-                {/* SYSTEM AUDIO BUTTON */}
                 <button 
                     onClick={() => setAudioSource('system')}
                     style={{
@@ -325,15 +345,15 @@ export default function HackerFaceScene() {
                         padding: '15px 30px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '1.2rem',
                         textTransform: 'uppercase', transition: '0.2s'
                     }}
-                    onMouseOver={(e) => e.target.style.background = 'rgba(0, 255, 255, 0.2)'}
-                    onMouseOut={(e) => e.target.style.background = 'transparent'}
+                    onMouseOver={(e) => (e.currentTarget.style.background = 'rgba(0, 255, 255, 0.2)')}
+                    onMouseOut={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
                     [ SYSTEM AUDIO ]
                 </button>
             </div>
             
             <p style={{marginTop: '20px', color: '#888', maxWidth: '400px', textAlign: 'center'}}>
-                FOR SYSTEM AUDIO: Select a Tab/Screen and check "Share Audio".
+                FOR SYSTEM AUDIO: Select a Tab/Screen and check &quot;Share Audio&quot;.
             </p>
         </div>
       )}
@@ -351,7 +371,7 @@ export default function HackerFaceScene() {
             <Noise opacity={0.3} />
             <Scanline density={1.5} opacity={0.3} />
             <Vignette eskil={false} offset={0.1} darkness={1.1} />
-            <Glitch delay={[2, 6]} duration={[0.2, 0.4]} strength={[0.2, 0.4]} />
+            <Glitch delay={[2, 6]} duration={[0.2, 0.4]} strength={[0.2, 0.4] as any} />
         </EffectComposer>
       </Canvas>
 
