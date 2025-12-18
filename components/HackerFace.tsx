@@ -7,74 +7,98 @@ import { EffectComposer, Noise, Vignette, Scanline, Glitch } from "@react-three/
 import * as THREE from "three";
 
 // --- 1. The Digital Eye Component ---
-function EyeElement({ isAngry, position, rotation, isBlinking }) {
-  // Define colors
-  const angryColor = "#ff003c"; // Red
-  const normalColor = "#39FF14"; // Neon Green
+// Renders different shapes based on 'mode' prop
+function EyeElement({ mode, position, rotation, isBlinking }) {
   
-  // Use a ref to jitter the eye position for that "glitchy" look
+  // Define Palette
+  const colors = {
+    normal: "#39FF14", // Neon Green
+    angry: "#ff003c",  // Red
+    shock: "#00ffff",  // Cyan
+    sus: "#ffff00",    // Yellow
+  };
+  
+  const currentColor = colors[mode] || colors.normal;
   const eyeRef = useRef();
 
-  useFrame((state) => {
+  // Jitter Effect (Random Twitching)
+  useFrame(() => {
     if (!eyeRef.current) return;
-    // Random tiny twitching (LED connection drift)
-    if (Math.random() > 0.98) {
-        eyeRef.current.position.x = (Math.random() - 0.5) * 0.02;
-        eyeRef.current.position.y = (Math.random() - 0.5) * 0.02;
+    if (Math.random() > 0.99) { // 1% chance per frame to twitch
+        eyeRef.current.position.x = (Math.random() - 0.5) * 0.03;
+        eyeRef.current.position.y = (Math.random() - 0.5) * 0.03;
     } else {
-        // Snap back to center
         eyeRef.current.position.x = 0;
         eyeRef.current.position.y = 0;
     }
   });
-  
+
   return (
     <group position={position} rotation={rotation}>
       
       {/* Jitter Container */}
       <group ref={eyeRef}>
-        {/* BLINKING LOGIC: Squash Y scale to 0.1 when blinking */}
+        
+        {/* Blink Container (Squash Y axis) */}
         <group scale={[1, isBlinking ? 0.05 : 1, 1]}>
 
-            {/* Background Glow */}
+            {/* Faint Glow Background */}
             <mesh position={[0, 0, -0.01]}>
                 <planeGeometry args={[0.4, 0.4]} />
-                <meshBasicMaterial 
-                color={isAngry ? angryColor : normalColor} 
-                transparent 
-                opacity={0.15} 
-                />
+                <meshBasicMaterial color={currentColor} transparent opacity={0.15} />
             </mesh>
 
-            {/* --- SHAPE RENDERING --- */}
-            {isAngry ? (
-                // --- ANGRY STATE: The "X" Shape ---
-                <group>
-                    <mesh rotation={[0, 0, Math.PI / 4]}>
-                        <planeGeometry args={[0.08, 0.35]} />
-                        <meshBasicMaterial color={angryColor} side={THREE.DoubleSide} toneMapped={false} />
-                    </mesh>
-                    <mesh rotation={[0, 0, -Math.PI / 4]}>
-                        <planeGeometry args={[0.08, 0.35]} />
-                        <meshBasicMaterial color={angryColor} side={THREE.DoubleSide} toneMapped={false} />
-                    </mesh>
-                </group>
-            ) : (
-                // --- NORMAL STATE: The "^" Shape ---
+            {/* --- EXPRESSION SHAPES --- */}
+
+            {/* 1. NORMAL: ^ ^ */}
+            {mode === "normal" && (
                 <group position={[0, -0.05, 0]}> 
+                    {/* Left Stroke */}
                     <mesh position={[-0.08, 0, 0]} rotation={[0, 0, Math.PI / 4]}>
                         <planeGeometry args={[0.06, 0.25]} />
-                        <meshBasicMaterial color={normalColor} side={THREE.DoubleSide} toneMapped={false} />
+                        <meshBasicMaterial color={currentColor} side={THREE.DoubleSide} toneMapped={false} />
                     </mesh>
+                    {/* Right Stroke */}
                     <mesh position={[0.08, 0, 0]} rotation={[0, 0, -Math.PI / 4]}>
                         <planeGeometry args={[0.06, 0.25]} />
-                        <meshBasicMaterial color={normalColor} side={THREE.DoubleSide} toneMapped={false} />
+                        <meshBasicMaterial color={currentColor} side={THREE.DoubleSide} toneMapped={false} />
                     </mesh>
                 </group>
             )}
+
+            {/* 2. ANGRY: > < (X Shape) */}
+            {mode === "angry" && (
+                <group>
+                     <mesh rotation={[0, 0, Math.PI / 4]}>
+                        <planeGeometry args={[0.08, 0.35]} />
+                        <meshBasicMaterial color={currentColor} side={THREE.DoubleSide} toneMapped={false} />
+                    </mesh>
+                    <mesh rotation={[0, 0, -Math.PI / 4]}>
+                        <planeGeometry args={[0.08, 0.35]} />
+                        <meshBasicMaterial color={currentColor} side={THREE.DoubleSide} toneMapped={false} />
+                    </mesh>
+                </group>
+            )}
+
+            {/* 3. SHOCKED: [ ] (Square) */}
+            {mode === "shock" && (
+                 <mesh rotation={[0, 0, Math.PI / 4]}>
+                    {/* RingGeometry(innerRadius, outerRadius, thetaSegments) */}
+                    <ringGeometry args={[0.12, 0.18, 4]} />
+                    <meshBasicMaterial color={currentColor} side={THREE.DoubleSide} toneMapped={false} />
+                </mesh>
+            )}
+
+            {/* 4. SUSPICIOUS: - - (Flat Line) */}
+            {mode === "sus" && (
+                <mesh>
+                    <planeGeometry args={[0.25, 0.08]} />
+                    <meshBasicMaterial color={currentColor} side={THREE.DoubleSide} toneMapped={false} />
+                </mesh>
+            )}
+
         </group>
       </group>
-
     </group>
   );
 }
@@ -82,23 +106,34 @@ function EyeElement({ isAngry, position, rotation, isBlinking }) {
 // --- 2. The Main Model Component ---
 function Model({ mouse }) {
   const group = useRef();
-  const [isAngry, setIsAngry] = useState(false);
+  
+  // State for expressions
+  const [mode, setMode] = useState("normal"); 
   const [isBlinking, setIsBlinking] = useState(false);
   
   const { scene } = useGLTF("/mask.glb");
 
-  // --- LIFE CYCLE: Random Blinking ---
+  // --- KEYBOARD LISTENERS ---
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+        if (e.key === "1") setMode("normal");
+        if (e.key === "2") setMode("angry");
+        if (e.key === "3") setMode("shock");
+        if (e.key === "4") setMode("sus");
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // --- BLINK LOOP ---
   useEffect(() => {
     const blinkLoop = () => {
-        // Random time between blinks (2000ms to 5000ms)
         const nextBlinkTime = Math.random() * 3000 + 2000;
-        
         setTimeout(() => {
             setIsBlinking(true);
-            // Eyes close for 150ms
             setTimeout(() => {
                 setIsBlinking(false);
-                blinkLoop(); // Restart loop
+                blinkLoop(); 
             }, 150);
         }, nextBlinkTime);
     };
@@ -123,7 +158,7 @@ function Model({ mouse }) {
   });
 
   return (
-    <group ref={group} dispose={null} onClick={() => setIsAngry(!isAngry)}>
+    <group ref={group} dispose={null}>
       
       <Resize scale={2.5}> 
         <Center>
@@ -132,22 +167,21 @@ function Model({ mouse }) {
       </Resize>
 
       {/* --- THE DIGITAL EYES --- */}
-      {/* Using your custom coordinates from the uploaded file */}
       <group position={[0, 0.3, 1.1]}> 
         
         {/* Left Eye */}
         <EyeElement 
-            isAngry={isAngry} 
-            isBlinking={isBlinking} // Pass blink state
-            position={[-0.50, 0.2, -0.7]} 
+            mode={mode} // Pass current expression
+            isBlinking={isBlinking} 
+            position={[-0.50, 0.2, -0.7]} // Your coords
             rotation={[0, -0.2, 0]}
         />
         
         {/* Right Eye */}
         <EyeElement 
-            isAngry={isAngry} 
-            isBlinking={isBlinking} // Pass blink state
-            position={[0.50, 0.2, -0.7]} 
+            mode={mode}
+            isBlinking={isBlinking} 
+            position={[0.50, 0.2, -0.7]} // Your coords
             rotation={[0, 0.2, 0]}
         />
         
@@ -197,8 +231,8 @@ export default function HackerFaceScene() {
           position: 'absolute', bottom: 40, left: 40, 
           color: '#00ffcc', fontFamily: 'monospace', pointerEvents: 'none' 
       }}>
-        <h1 style={{ margin: 0 }}>// WRENCH_MASK_V4_ALIVE</h1>
-        <p>STATUS: ONLINE</p>
+        <h1 style={{ margin: 0 }}>// WRENCH_MASK_V5</h1>
+        <p>PRESS [1] [2] [3] [4] TO CHANGE EXPRESSION</p>
       </div>
     </div>
   );
