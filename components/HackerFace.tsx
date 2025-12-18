@@ -84,7 +84,6 @@ function useAudioAnalyzer(sourceType: AudioSourceType) {
   const getVolume = (): number => {
     if (!analyzer || !dataArray) return 0;
     
-    // Cast to any to fix Uint8Array mismatch error
     analyzer.getByteFrequencyData(dataArray as any);
     
     let sum = 0;
@@ -367,16 +366,21 @@ export default function HackerFaceScene() {
         <DedSecEnvironment />
         <Model mouse={mouse} getVolume={getVolume} />
 
+        {/* FIXED: Added 'as any' to glitch props and 'enableNormalPass={false}' */}
         <EffectComposer enableNormalPass={false}>
             <Noise opacity={0.3} />
             <Scanline density={1.5} opacity={0.3} />
             <Vignette eskil={false} offset={0.1} darkness={1.1} />
-            <Glitch delay={[2, 6]} duration={[0.2, 0.4]} strength={[0.2, 0.4] as any} />
+            <Glitch 
+                delay={[2, 6] as any} 
+                duration={[0.2, 0.4] as any} 
+                strength={[0.2, 0.4] as any} 
+            />
         </EffectComposer>
       </Canvas>
 
       <div style={{ position: 'absolute', bottom: 40, left: 40, color: '#00ffcc', fontFamily: 'monospace', pointerEvents: 'none' }}>
-        <h1 style={{ margin: 0 }}>// DEDSEC_V9.3</h1>
+        <h1 style={{ margin: 0 }}>// DEDSEC_V9.4</h1>
         <p>SOURCE: {audioSource ? audioSource.toUpperCase() : "WAITING"} | KEYS: [1-4]</p>
       </div>
     </div>
