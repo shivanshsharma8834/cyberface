@@ -40,14 +40,13 @@ function useAudioAnalyzer(sourceType: AudioSourceType) {
     const setupAudio = async () => {
         try {
             let stream: MediaStream;
-            // Handle cross-browser audio context
             const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
             const audioCtx = new AudioContextClass();
             
             if (sourceType === 'mic') {
                 stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             } else {
-                // System Audio via Screen Share
+                // System Audio
                 stream = await navigator.mediaDevices.getDisplayMedia({ 
                     video: true, 
                     audio: {
@@ -86,7 +85,7 @@ function useAudioAnalyzer(sourceType: AudioSourceType) {
   const getVolume = (): number => {
     if (!analyzer || !dataArray) return 0;
     
-    // FIX: Cast dataArray to any to bypass the "ArrayBufferLike" vs "ArrayBuffer" mismatch error
+    // Cast to any to fix Uint8Array mismatch error
     analyzer.getByteFrequencyData(dataArray as any);
     
     let sum = 0;
@@ -94,7 +93,6 @@ function useAudioAnalyzer(sourceType: AudioSourceType) {
         sum += dataArray[i];
     }
     
-    // Normalize (System audio is louder than Mic)
     const normalizeFactor = sourceType === 'system' ? 180.0 : 128.0;
     return (sum / dataArray.length) / normalizeFactor; 
   };
@@ -231,11 +229,12 @@ function MouthElement({ mode, volume, position }: MouthProps) {
                  </group>
             )}
 
-            {/* 3. SHOCK */}
+            {/* 3. SHOCK - FIXED ROTATION ERROR */}
             {mode === "shock" && (
-                <mesh scale={[1, 1 + volume, 1]}>
+                // FIX: Rotation must be on the Mesh, not the Material
+                <mesh scale={[1, 1 + volume, 1]} rotation={[0, 0, Math.PI / 4]}>
                      <ringGeometry args={[0.1, 0.15, 4]} />
-                     <meshBasicMaterial color={currentColor} rotation={Math.PI/4} toneMapped={false} side={THREE.DoubleSide} />
+                     <meshBasicMaterial color={currentColor} toneMapped={false} side={THREE.DoubleSide} />
                 </mesh>
             )}
 
@@ -379,7 +378,7 @@ export default function HackerFaceScene() {
       </Canvas>
 
       <div style={{ position: 'absolute', bottom: 40, left: 40, color: '#00ffcc', fontFamily: 'monospace', pointerEvents: 'none' }}>
-        <h1 style={{ margin: 0 }}>// DEDSEC_V9.1</h1>
+        <h1 style={{ margin: 0 }}>// DEDSEC_V9.2</h1>
         <p>SOURCE: {audioSource ? audioSource.toUpperCase() : "WAITING"} | KEYS: [1-4]</p>
       </div>
     </div>
