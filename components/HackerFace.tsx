@@ -40,6 +40,7 @@ function useAudioAnalyzer(sourceType: AudioSourceType) {
     const setupAudio = async () => {
         try {
             let stream: MediaStream;
+            // Handle cross-browser audio context
             const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
             const audioCtx = new AudioContextClass();
             
@@ -84,7 +85,9 @@ function useAudioAnalyzer(sourceType: AudioSourceType) {
 
   const getVolume = (): number => {
     if (!analyzer || !dataArray) return 0;
-    analyzer.getByteFrequencyData(dataArray);
+    
+    // FIX: Cast dataArray to any to bypass the "ArrayBufferLike" vs "ArrayBuffer" mismatch error
+    analyzer.getByteFrequencyData(dataArray as any);
     
     let sum = 0;
     for (let i = 0; i < dataArray.length; i++) {
@@ -376,7 +379,7 @@ export default function HackerFaceScene() {
       </Canvas>
 
       <div style={{ position: 'absolute', bottom: 40, left: 40, color: '#00ffcc', fontFamily: 'monospace', pointerEvents: 'none' }}>
-        <h1 style={{ margin: 0 }}>// DEDSEC_V9.0</h1>
+        <h1 style={{ margin: 0 }}>// DEDSEC_V9.1</h1>
         <p>SOURCE: {audioSource ? audioSource.toUpperCase() : "WAITING"} | KEYS: [1-4]</p>
       </div>
     </div>
