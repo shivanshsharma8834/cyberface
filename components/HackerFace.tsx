@@ -6,41 +6,81 @@ import { useGLTF, Center, Resize, Float, Sparkles, Grid } from "@react-three/dre
 import { EffectComposer, Noise, Vignette, Scanline, Glitch } from "@react-three/postprocessing";
 import * as THREE from "three";
 
-// --- 1. AUDIO ANALYZER ---
-function useAudioAnalyzer(ready) {
+// --- 1. AUDIO ANALYZER (UPDATED FOR SYSTEM AUDIO) ---
+function useAudioAnalyzer(sourceType) { // sourceType: 'mic' | 'system' | null
   const [analyzer, setAnalyzer] = useState(null);
   const [dataArray, setDataArray] = useState(null);
 
   useEffect(() => {
-    if (!ready) return;
-    const setupMic = async () => {
+    if (!sourceType) return;
+
+    const setupAudio = async () => {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            let stream;
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            
+            if (sourceType === 'mic') {
+                // Method A: Standard Microphone
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            } else if (sourceType === 'system') {
+                // Method B: System Audio via Screen Share
+                // NOTE: User MUST check "Share Audio" in the browser popup
+                stream = await navigator.mediaDevices.getDisplayMedia({ 
+                    video: true, // Video is required to get audio in displayMedia
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false,
+                    } 
+                });
+            }
+
             const source = audioCtx.createMediaStreamSource(stream);
             const newAnalyzer = audioCtx.createAnalyser();
             newAnalyzer.fftSize = 64; 
+            newAnalyzer.smoothingTimeConstant = 0.8; // Smooth out jittery system audio
+            
             source.connect(newAnalyzer);
+            
             const bufferLength = newAnalyzer.frequencyBinCount;
             const data = new Uint8Array(bufferLength);
+            
             setAnalyzer(newAnalyzer);
             setDataArray(data);
-        } catch (err) { console.error("Mic denied:", err); }
+
+        } catch (err) {
+            console.error("Audio access denied:", err);
+            // Reset if failed
+        }
     };
-    setupMic();
-  }, [ready]);
+
+    setupAudio();
+    
+    // Cleanup function to close context if component unmounts
+    return () => {
+        if(analyzer) analyzer.disconnect();
+    }
+  }, [sourceType]);
 
   const getVolume = () => {
     if (!analyzer || !dataArray) return 0;
     analyzer.getByteFrequencyData(dataArray);
+    
     let sum = 0;
-    for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-    return (sum / dataArray.length) / 128.0; 
+    // We focus on lower frequencies (bass) for better visual 'punch'
+    for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+    }
+    
+    // Normalize (System audio is louder than Mic, so we divide by more)
+    const normalizeFactor = sourceType === 'system' ? 180.0 : 128.0;
+    return (sum / dataArray.length) / normalizeFactor; 
   };
+
   return getVolume;
 }
 
-// --- 2. ENVIRONMENT ---
+// --- 2. ENVIRONMENT (UNCHANGED) ---
 function DedSecEnvironment() {
   const debrisData = useMemo(() => new Array(15).fill(0).map(() => ({
       position: [(Math.random() - 0.5) * 15, (Math.random() - 0.5) * 10, (Math.random() - 1) * 10 - 2],
@@ -66,7 +106,7 @@ function DedSecEnvironment() {
   );
 }
 
-// --- 3. DIGITAL EYE ---
+// --- 3. DIGITAL EYE (UNCHANGED) ---
 function EyeElement({ mode, position, rotation, isBlinking, volume }) {
   const colors = { normal: "#39FF14", angry: "#ff003c", shock: "#00ffff", sus: "#ffff00" };
   const currentColor = colors[mode] || colors.normal;
@@ -132,17 +172,16 @@ function EyeElement({ mode, position, rotation, isBlinking, volume }) {
   );
 }
 
-// --- 4. NEW MOUTH ELEMENT (FIXED) ---
+// --- 4. MOUTH ELEMENT (UNCHANGED) ---
 function MouthElement({ mode, volume, position }) {
     const colors = { normal: "#39FF14", angry: "#ff003c", shock: "#00ffff", sus: "#ffff00" };
     const currentColor = colors[mode] || colors.normal;
     
-    // Increased base height slightly for visibility
     const barHeight = 0.15 + (volume * 0.8); 
 
     return (
         <group position={position}>
-            {/* 1. NORMAL: Voice Visualizer Bars */}
+            {/* 1. NORMAL */}
             {mode === "normal" && (
                 <group>
                     {[-0.15, -0.05, 0.05, 0.15].map((x, i) => (
@@ -154,7 +193,7 @@ function MouthElement({ mode, volume, position }) {
                 </group>
             )}
 
-            {/* 2. ANGRY: Sharp Teeth / Zig Zag */}
+            {/* 2. ANGRY */}
             {mode === "angry" && (
                  <group>
                     {[-0.15, -0.05, 0.05, 0.15].map((x, i) => (
@@ -166,7 +205,7 @@ function MouthElement({ mode, volume, position }) {
                  </group>
             )}
 
-            {/* 3. SHOCK: Open Mouth Box */}
+            {/* 3. SHOCK */}
             {mode === "shock" && (
                 <mesh scale={[1, 1 + volume, 1]}>
                      <ringGeometry args={[0.1, 0.15, 4]} />
@@ -174,7 +213,7 @@ function MouthElement({ mode, volume, position }) {
                 </mesh>
             )}
 
-            {/* 4. SUSPICIOUS: Flat Line */}
+            {/* 4. SUSPICIOUS */}
             {mode === "sus" && (
                 <mesh>
                     <planeGeometry args={[0.3, 0.06]} />
@@ -185,7 +224,7 @@ function MouthElement({ mode, volume, position }) {
     )
 }
 
-// --- 5. MAIN MODEL ---
+// --- 5. MAIN MODEL (UNCHANGED) ---
 function Model({ mouse, getVolume }) {
   const group = useRef();
   const [mode, setMode] = useState("normal"); 
@@ -227,14 +266,11 @@ function Model({ mouse, getVolume }) {
     <group ref={group} dispose={null}>
       <Resize scale={2.5}><Center><primitive object={scene} /></Center></Resize>
       
-      {/* EYE GROUP */}
       <group position={[0, 0.3, 1.2]}> 
         <EyeElement mode={mode} isBlinking={isBlinking} volume={currentVol} position={[-0.50, 0.2, -0.7]} rotation={[0, -0.2, 0]} />
         <EyeElement mode={mode} isBlinking={isBlinking} volume={currentVol} position={[0.50, 0.2, -0.7]} rotation={[0, 0.2, 0]} />
       </group>
 
-      {/* MOUTH GROUP */}
-      {/* FIX: Z Position changed from 0.5 to 1.15 to bring it OUT of the mask */}
       <group position={[0, -0.6, 0.75]} rotation={[0.3, 0, 0]}>
          <MouthElement mode={mode} volume={currentVol} position={[0, 0, 0]} />
       </group>
@@ -243,11 +279,11 @@ function Model({ mouse, getVolume }) {
   );
 }
 
-// --- 6. SCENE WRAPPER ---
+// --- 6. SCENE WRAPPER (UPDATED UI) ---
 export default function HackerFaceScene() {
   const mouse = useRef([0, 0]);
-  const [audioEnabled, setAudioEnabled] = useState(false);
-  const getVolume = useAudioAnalyzer(audioEnabled);
+  const [audioSource, setAudioSource] = useState(null); // 'mic' or 'system' or null
+  const getVolume = useAudioAnalyzer(audioSource);
 
   const handleMouseMove = (e) => {
     mouse.current = [(e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1];
@@ -255,13 +291,50 @@ export default function HackerFaceScene() {
 
   return (
     <div style={{ width: "100vw", height: "100vh", background: "#050505" }} onMouseMove={handleMouseMove}>
-      {!audioEnabled && (
-        <div onClick={() => setAudioEnabled(true)} style={{
+      
+      {/* INITIALIZATION OVERLAY */}
+      {!audioSource && (
+        <div style={{
             position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-            background: 'rgba(0,0,0,0.85)', zIndex: 10, display: 'flex', flexDirection: 'column', 
-            alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#39FF14', fontFamily: 'monospace'
+            background: 'rgba(0,0,0,0.9)', zIndex: 10, display: 'flex', flexDirection: 'column', 
+            alignItems: 'center', justifyContent: 'center', color: '#39FF14', fontFamily: 'monospace',
+            gap: '20px'
         }}>
-            <h1 style={{fontSize: '2rem', border: '2px solid #39FF14', padding: '20px'}}>[ INITIALIZE SYSTEM ]</h1>
+            <h1 style={{fontSize: '2rem', borderBottom: '2px solid #39FF14', paddingBottom: '10px'}}>[ INITIALIZE AUDIO ]</h1>
+            
+            <div style={{ display: 'flex', gap: '20px' }}>
+                {/* MIC BUTTON */}
+                <button 
+                    onClick={() => setAudioSource('mic')}
+                    style={{
+                        background: 'transparent', border: '2px solid #39FF14', color: '#39FF14',
+                        padding: '15px 30px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '1.2rem',
+                        textTransform: 'uppercase', transition: '0.2s'
+                    }}
+                    onMouseOver={(e) => e.target.style.background = 'rgba(57, 255, 20, 0.2)'}
+                    onMouseOut={(e) => e.target.style.background = 'transparent'}
+                >
+                    [ ENABLE MIC ]
+                </button>
+
+                {/* SYSTEM AUDIO BUTTON */}
+                <button 
+                    onClick={() => setAudioSource('system')}
+                    style={{
+                        background: 'transparent', border: '2px solid #00ffff', color: '#00ffff',
+                        padding: '15px 30px', cursor: 'pointer', fontFamily: 'monospace', fontSize: '1.2rem',
+                        textTransform: 'uppercase', transition: '0.2s'
+                    }}
+                    onMouseOver={(e) => e.target.style.background = 'rgba(0, 255, 255, 0.2)'}
+                    onMouseOut={(e) => e.target.style.background = 'transparent'}
+                >
+                    [ SYSTEM AUDIO ]
+                </button>
+            </div>
+            
+            <p style={{marginTop: '20px', color: '#888', maxWidth: '400px', textAlign: 'center'}}>
+                FOR SYSTEM AUDIO: Select a Tab/Screen and check "Share Audio".
+            </p>
         </div>
       )}
 
@@ -283,8 +356,8 @@ export default function HackerFaceScene() {
       </Canvas>
 
       <div style={{ position: 'absolute', bottom: 40, left: 40, color: '#00ffcc', fontFamily: 'monospace', pointerEvents: 'none' }}>
-        <h1 style={{ margin: 0 }}>// DEDSEC_V8.5</h1>
-        <p>AUDIO: {audioEnabled ? "ONLINE" : "OFFLINE"} | KEYS: [1-4]</p>
+        <h1 style={{ margin: 0 }}>// DEDSEC_V9.0</h1>
+        <p>SOURCE: {audioSource ? audioSource.toUpperCase() : "WAITING"} | KEYS: [1-4]</p>
       </div>
     </div>
   );
