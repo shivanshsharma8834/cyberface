@@ -46,7 +46,6 @@ function useAudioAnalyzer(sourceType: AudioSourceType) {
             if (sourceType === 'mic') {
                 stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             } else {
-                // System Audio
                 stream = await navigator.mediaDevices.getDisplayMedia({ 
                     video: true, 
                     audio: {
@@ -229,9 +228,8 @@ function MouthElement({ mode, volume, position }: MouthProps) {
                  </group>
             )}
 
-            {/* 3. SHOCK - FIXED ROTATION ERROR */}
+            {/* 3. SHOCK */}
             {mode === "shock" && (
-                // FIX: Rotation must be on the Mesh, not the Material
                 <mesh scale={[1, 1 + volume, 1]} rotation={[0, 0, Math.PI / 4]}>
                      <ringGeometry args={[0.1, 0.15, 4]} />
                      <meshBasicMaterial color={currentColor} toneMapped={false} side={THREE.DoubleSide} />
@@ -369,7 +367,7 @@ export default function HackerFaceScene() {
         <DedSecEnvironment />
         <Model mouse={mouse} getVolume={getVolume} />
 
-        <EffectComposer disableNormalPass>
+        <EffectComposer enableNormalPass={false}>
             <Noise opacity={0.3} />
             <Scanline density={1.5} opacity={0.3} />
             <Vignette eskil={false} offset={0.1} darkness={1.1} />
@@ -378,7 +376,7 @@ export default function HackerFaceScene() {
       </Canvas>
 
       <div style={{ position: 'absolute', bottom: 40, left: 40, color: '#00ffcc', fontFamily: 'monospace', pointerEvents: 'none' }}>
-        <h1 style={{ margin: 0 }}>// DEDSEC_V9.2</h1>
+        <h1 style={{ margin: 0 }}>// DEDSEC_V9.3</h1>
         <p>SOURCE: {audioSource ? audioSource.toUpperCase() : "WAITING"} | KEYS: [1-4]</p>
       </div>
     </div>
